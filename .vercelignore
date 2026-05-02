@@ -1,0 +1,13 @@
+.venv
+__pycache__
+*.pyc
+.DS_Store
+.idea
+*.jpg
+*.jpeg
+*.png
+*.gif
+!resources/**/*.jpg
+!resources/**/*.jpeg
+!resources/**/*.png
+!resources/**/*.gif
