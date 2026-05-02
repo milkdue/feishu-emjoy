@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
@@ -9,6 +10,8 @@ from meme_router import MemeCommandError, generate_from_text
 
 
 FEISHU_API = "https://open.feishu.cn/open-apis"
+PROCESSED_EVENTS: Dict[str, float] = {}
+DEDUP_TTL_SECONDS = 3600
 
 
 class FeishuConfigError(Exception):
@@ -90,24 +93,66 @@ def upload_image(token: str, image_bytes: bytes, filename: str) -> str:
     return image_key
 
 
-def send_message(token: str, receive_id: str, msg_type: str, content: Dict[str, Any]) -> None:
+def cleanup_processed_events(now: float) -> None:
+    expired = [
+        key for key, created_at in PROCESSED_EVENTS.items()
+        if now - created_at > DEDUP_TTL_SECONDS
+    ]
+    for key in expired:
+        PROCESSED_EVENTS.pop(key, None)
+
+
+def event_dedup_key(payload: Dict[str, Any]) -> Optional[str]:
+    header = payload.get("header", {})
+    event = payload.get("event", {})
+    message = event.get("message", {})
+    return (
+        header.get("event_id")
+        or event.get("event_id")
+        or message.get("message_id")
+        or None
+    )
+
+
+def already_processed(payload: Dict[str, Any]) -> bool:
+    key = event_dedup_key(payload)
+    if not key:
+        return False
+    now = time.time()
+    cleanup_processed_events(now)
+    if key in PROCESSED_EVENTS:
+        return True
+    PROCESSED_EVENTS[key] = now
+    return False
+
+
+def send_message(
+    token: str,
+    receive_id: str,
+    msg_type: str,
+    content: Dict[str, Any],
+    uuid: Optional[str] = None,
+) -> None:
+    body = {
+        "receive_id": receive_id,
+        "msg_type": msg_type,
+        "content": json.dumps(content, ensure_ascii=False),
+    }
+    if uuid:
+        body["uuid"] = uuid[:64]
     post_json(
         "/im/v1/messages?receive_id_type=chat_id",
-        {
-            "receive_id": receive_id,
-            "msg_type": msg_type,
-            "content": json.dumps(content, ensure_ascii=False),
-        },
+        body,
         token=token,
     )
 
 
-def send_text(token: str, chat_id: str, text: str) -> None:
-    send_message(token, chat_id, "text", {"text": text})
+def send_text(token: str, chat_id: str, text: str, uuid: Optional[str] = None) -> None:
+    send_message(token, chat_id, "text", {"text": text}, uuid=uuid)
 
 
-def send_image(token: str, chat_id: str, image_key: str) -> None:
-    send_message(token, chat_id, "image", {"image_key": image_key})
+def send_image(token: str, chat_id: str, image_key: str, uuid: Optional[str] = None) -> None:
+    send_message(token, chat_id, "image", {"image_key": image_key}, uuid=uuid)
 
 
 def extract_text_message(event: Dict[str, Any]) -> tuple[Optional[str], Optional[str]]:
@@ -140,6 +185,10 @@ def handle_feishu_event(payload: Dict[str, Any]) -> Dict[str, Any]:
     if header.get("event_type") != "im.message.receive_v1":
         return {"ok": True, "ignored": "unsupported event"}
 
+    dedup_key = event_dedup_key(payload)
+    if already_processed(payload):
+        return {"ok": True, "ignored": "duplicate event", "dedup_key": dedup_key}
+
     event = payload.get("event", {})
     sender_type = event.get("sender", {}).get("sender_type")
     if sender_type == "app":
@@ -154,9 +203,8 @@ def handle_feishu_event(payload: Dict[str, Any]) -> Dict[str, Any]:
         meme = generate_from_text(text)
         filename = f"{meme.command}.{meme.extension}"
         image_key = upload_image(token, meme.buffer.getvalue(), filename)
-        send_image(token, chat_id, image_key)
+        send_image(token, chat_id, image_key, uuid=dedup_key)
     except MemeCommandError as exc:
-        send_text(token, chat_id, str(exc))
+        send_text(token, chat_id, str(exc), uuid=dedup_key)
 
     return {"ok": True}
-
