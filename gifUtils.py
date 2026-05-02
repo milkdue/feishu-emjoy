@@ -1,9 +1,14 @@
 from functools import partial
+from pathlib import Path
 from typing import List, Tuple
 
 from buildImage import BuildImage
 from imageDownload import load_image
 from imageUtils import save_gif, OVER_LENGTH_MSG
+
+
+def font_path(filename: str = "NotoSansSC-Regular.otf") -> str:
+    return str(Path(__file__).parent / "resources" / "fonts" / filename)
 
 
 def make_gif(
@@ -40,6 +45,7 @@ def make_gif(
                     stroke_ratio=0.05,
                     stroke_fill="black",
                     valign="bottom",
+                    fontname=font_path(),
                 )
             except ValueError:
                 return OVER_LENGTH_MSG
