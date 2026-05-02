@@ -1,8 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from feishu_bot import FeishuApiError, FeishuConfigError, handle_feishu_event
-
 
 app = FastAPI()
 
@@ -21,11 +19,26 @@ async def feishu_health():
 async def feishu_callback(request: Request):
     try:
         payload = await request.json()
+        if "challenge" in payload:
+            return JSONResponse({"challenge": payload["challenge"]})
+        if "CHALLENGE" in payload:
+            return JSONResponse({"challenge": payload["CHALLENGE"]})
+        if payload.get("type") == "url_verification":
+            return JSONResponse({"challenge": payload.get("challenge", "")})
+
+        from feishu_bot import FeishuApiError, FeishuConfigError, handle_feishu_event
+
         return JSONResponse(handle_feishu_event(payload))
-    except FeishuConfigError as exc:
-        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
-    except FeishuApiError as exc:
+    except ImportError as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
     except Exception as exc:
-        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+        try:
+            from feishu_bot import FeishuApiError, FeishuConfigError
+        except ImportError:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
 
+        if isinstance(exc, FeishuConfigError):
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+        if isinstance(exc, FeishuApiError):
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
