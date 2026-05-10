@@ -4,7 +4,7 @@ from unittest.mock import patch
 import feishu_bot
 
 
-def text_event(text: str, mentions=None):
+def text_event(text: str, mentions=None, chat_type="group"):
     return {
         "header": {"event_type": "im.message.receive_v1", "event_id": "evt_1"},
         "event": {
@@ -13,6 +13,7 @@ def text_event(text: str, mentions=None):
                 "chat_id": "oc_1",
                 "message_id": "om_1",
                 "message_type": "text",
+                "chat_type": chat_type,
                 "content": f'{{"text": "{text}"}}',
                 "mentions": mentions or [],
             },
@@ -43,6 +44,34 @@ class FeishuMentionTests(unittest.TestCase):
         result = feishu_bot.handle_feishu_event(text_event("狂爱粉 test@example.com"))
 
         self.assertEqual(result, {"ok": True, "ignored": "not mentioned"})
+
+    @patch("feishu_bot.send_image")
+    @patch("feishu_bot.upload_image")
+    @patch("feishu_bot.generate_from_text")
+    @patch("feishu_bot.get_tenant_access_token")
+    @patch("feishu_bot.load_config")
+    def test_private_message_without_at_generates_meme(
+        self,
+        load_config,
+        get_token,
+        generate_from_text,
+        upload_image,
+        send_image,
+    ):
+        load_config.return_value = feishu_bot.FeishuConfig("app", "secret")
+        get_token.return_value = "tenant-token"
+        generate_from_text.return_value.command = "狂爱粉"
+        generate_from_text.return_value.extension = "jpg"
+        generate_from_text.return_value.buffer.getvalue.return_value = b"image"
+        upload_image.return_value = "img_key"
+
+        result = feishu_bot.handle_feishu_event(
+            text_event("狂爱粉 测试一下", chat_type="p2p")
+        )
+
+        self.assertEqual(result, {"ok": True})
+        generate_from_text.assert_called_once_with("狂爱粉 测试一下")
+        send_image.assert_called_once()
 
     @patch("feishu_bot.get_tenant_access_token")
     @patch("feishu_bot.load_config")

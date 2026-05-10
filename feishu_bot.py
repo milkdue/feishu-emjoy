@@ -264,6 +264,10 @@ def message_has_leading_mention(message: Dict[str, Any], text: str) -> bool:
     return any(mention.get("key") == key for mention in mentions)
 
 
+def is_private_chat(message: Dict[str, Any]) -> bool:
+    return message.get("chat_type") == "p2p"
+
+
 def handle_feishu_event(payload: Dict[str, Any]) -> Dict[str, Any]:
     if "challenge" in payload:
         return {"challenge": payload["challenge"]}
@@ -293,13 +297,14 @@ def handle_feishu_event(payload: Dict[str, Any]) -> Dict[str, Any]:
     chat_id, text = extract_text_message(event)
     if not chat_id or not text:
         return {"ok": True, "ignored": "non-text message"}
-    if not has_bot_mention(text):
-        return {"ok": True, "ignored": "not mentioned"}
-    log_message_mentions(message)
-    if config.bot_open_id and not message_mentions_open_id(message, config.bot_open_id):
-        return {"ok": True, "ignored": "not mentioned"}
-    if not config.bot_open_id and not message_has_leading_mention(message, text):
-        return {"ok": True, "ignored": "not mentioned"}
+    if not is_private_chat(message):
+        if not has_bot_mention(text):
+            return {"ok": True, "ignored": "not mentioned"}
+        log_message_mentions(message)
+        if config.bot_open_id and not message_mentions_open_id(message, config.bot_open_id):
+            return {"ok": True, "ignored": "not mentioned"}
+        if not config.bot_open_id and not message_has_leading_mention(message, text):
+            return {"ok": True, "ignored": "not mentioned"}
 
     token = get_tenant_access_token(config)
     try:
