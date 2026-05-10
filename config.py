@@ -4,8 +4,13 @@ from pydantic import BaseModel, Extra
 
 
 class Config(BaseModel, extra=Extra.ignore):
-    custom_font_path: Path = Path("data/fonts")
+    custom_font_path: Path = Path(__file__).parent / "resources" / "fonts"
     default_fallback_fonts: List[str] = [
+        "NotoSansSC-Regular",
+        "NotoSerifSC-Regular",
+        "FZSJ-QINGCRJ",
+        "FZSEJW",
+        "FZXS14",
         "Arial",
         "Tahoma",
         "Helvetica Neue",

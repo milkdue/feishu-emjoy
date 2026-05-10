@@ -27,9 +27,11 @@ https://你的域名.vercel.app/api/feishu
 FEISHU_APP_ID=cli_xxx
 FEISHU_APP_SECRET=xxx
 FEISHU_VERIFICATION_TOKEN=xxx
+FEISHU_BOT_OPEN_ID=ou_xxx
 ```
 
 `FEISHU_VERIFICATION_TOKEN` 可选，但建议填写，用来校验飞书事件来源。
+`FEISHU_BOT_OPEN_ID` 可选，但建议填写；填写后机器人只响应明确 @ 到自己的消息。如果不填写，代码会通过飞书 `/bot/v3/info` 获取并缓存当前机器人的 `open_id`。
 
 ## 用户使用方式
 

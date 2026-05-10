@@ -12,6 +12,7 @@ from meme_router import MemeCommandError, generate_from_text
 FEISHU_API = "https://open.feishu.cn/open-apis"
 PROCESSED_EVENTS: Dict[str, float] = {}
 DEDUP_TTL_SECONDS = 3600
+BOT_OPEN_ID: Optional[str] = None
 
 
 class FeishuConfigError(Exception):
@@ -27,6 +28,7 @@ class FeishuConfig:
     app_id: str
     app_secret: str
     verification_token: Optional[str] = None
+    bot_open_id: Optional[str] = None
 
 
 def load_config() -> FeishuConfig:
@@ -38,6 +40,7 @@ def load_config() -> FeishuConfig:
         app_id=app_id,
         app_secret=app_secret,
         verification_token=os.getenv("FEISHU_VERIFICATION_TOKEN", "").strip() or None,
+        bot_open_id=os.getenv("FEISHU_BOT_OPEN_ID", "").strip() or None,
     )
 
 
@@ -61,6 +64,16 @@ def post_json(path: str, data: Dict[str, Any], token: Optional[str] = None) -> D
     return body
 
 
+def get_json(path: str, token: str) -> Dict[str, Any]:
+    headers = {"Authorization": f"Bearer {token}"}
+    resp = httpx.get(f"{FEISHU_API}{path}", headers=headers, timeout=20)
+    resp.raise_for_status()
+    body = resp.json()
+    if body.get("code", 0) != 0:
+        raise FeishuApiError(f"飞书接口错误：{body}")
+    return body
+
+
 def get_tenant_access_token(config: FeishuConfig) -> str:
     body = post_json(
         "/auth/v3/tenant_access_token/internal",
@@ -70,6 +83,20 @@ def get_tenant_access_token(config: FeishuConfig) -> str:
     if not token:
         raise FeishuApiError(f"tenant_access_token 缺失：{body}")
     return token
+
+
+def get_bot_open_id(token: str) -> str:
+    global BOT_OPEN_ID
+    if BOT_OPEN_ID:
+        return BOT_OPEN_ID
+
+    body = get_json("/bot/v3/info", token)
+    data = body.get("data", {})
+    open_id = data.get("open_id") or data.get("bot", {}).get("open_id")
+    if not open_id:
+        raise FeishuApiError(f"bot open_id 缺失：{body}")
+    BOT_OPEN_ID = open_id
+    return open_id
 
 
 def upload_image(token: str, image_bytes: bytes, filename: str) -> str:
@@ -170,6 +197,19 @@ def extract_text_message(event: Dict[str, Any]) -> tuple[Optional[str], Optional
     return chat_id, text
 
 
+def has_bot_mention(text: str) -> bool:
+    text = text.lstrip()
+    return text.startswith("<at") or text.startswith("@")
+
+
+def message_mentions_open_id(message: Dict[str, Any], open_id: str) -> bool:
+    for mention in message.get("mentions") or []:
+        mention_id = mention.get("id") or {}
+        if mention_id.get("open_id") == open_id:
+            return True
+    return False
+
+
 def handle_feishu_event(payload: Dict[str, Any]) -> Dict[str, Any]:
     if "challenge" in payload:
         return {"challenge": payload["challenge"]}
@@ -190,6 +230,7 @@ def handle_feishu_event(payload: Dict[str, Any]) -> Dict[str, Any]:
         return {"ok": True, "ignored": "duplicate event", "dedup_key": dedup_key}
 
     event = payload.get("event", {})
+    message = event.get("message", {})
     sender_type = event.get("sender", {}).get("sender_type")
     if sender_type == "app":
         return {"ok": True, "ignored": "bot message"}
@@ -197,8 +238,16 @@ def handle_feishu_event(payload: Dict[str, Any]) -> Dict[str, Any]:
     chat_id, text = extract_text_message(event)
     if not chat_id or not text:
         return {"ok": True, "ignored": "non-text message"}
+    if not has_bot_mention(text):
+        return {"ok": True, "ignored": "not mentioned"}
+    if config.bot_open_id and not message_mentions_open_id(message, config.bot_open_id):
+        return {"ok": True, "ignored": "not mentioned"}
 
     token = get_tenant_access_token(config)
+    if not config.bot_open_id and message.get("mentions"):
+        bot_open_id = get_bot_open_id(token)
+        if not message_mentions_open_id(message, bot_open_id):
+            return {"ok": True, "ignored": "not mentioned"}
     try:
         meme = generate_from_text(text)
         filename = f"{meme.command}.{meme.extension}"

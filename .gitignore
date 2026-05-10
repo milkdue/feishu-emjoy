@@ -11,3 +11,7 @@ __pycache__/
 !resources/**/*.jpeg
 !resources/**/*.png
 !resources/**/*.gif
+!docs/images/**/*.jpg
+!docs/images/**/*.jpeg
+!docs/images/**/*.png
+!docs/images/**/*.gif
