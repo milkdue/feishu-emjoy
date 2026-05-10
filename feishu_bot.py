@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
@@ -13,6 +14,7 @@ FEISHU_API = "https://open.feishu.cn/open-apis"
 PROCESSED_EVENTS: Dict[str, float] = {}
 DEDUP_TTL_SECONDS = 3600
 BOT_OPEN_ID: Optional[str] = None
+CONFIG_LOGGED = False
 
 
 class FeishuConfigError(Exception):
@@ -42,6 +44,22 @@ def load_config() -> FeishuConfig:
         verification_token=os.getenv("FEISHU_VERIFICATION_TOKEN", "").strip() or None,
         bot_open_id=os.getenv("FEISHU_BOT_OPEN_ID", "").strip() or None,
     )
+
+
+def mask_id(value: Optional[str]) -> str:
+    if not value:
+        return "unset"
+    if len(value) <= 8:
+        return "***"
+    return f"{value[:4]}...{value[-4:]}"
+
+
+def log_config_once(config: FeishuConfig) -> None:
+    global CONFIG_LOGGED
+    if CONFIG_LOGGED:
+        return
+    print(f"FEISHU_BOT_OPEN_ID={mask_id(config.bot_open_id)}")
+    CONFIG_LOGGED = True
 
 
 def verify_token(payload: Dict[str, Any], config: FeishuConfig) -> None:
@@ -202,12 +220,48 @@ def has_bot_mention(text: str) -> bool:
     return text.startswith("<at") or text.startswith("@")
 
 
+def leading_mention_key(text: str) -> Optional[str]:
+    text = text.lstrip()
+    if text.startswith("<at"):
+        match = re.match(r"(<at[^>]*>.*?</at>)", text)
+        return match.group(1) if match else None
+    if text.startswith("@"):
+        return text.split(maxsplit=1)[0]
+    return None
+
+
 def message_mentions_open_id(message: Dict[str, Any], open_id: str) -> bool:
     for mention in message.get("mentions") or []:
         mention_id = mention.get("id") or {}
         if mention_id.get("open_id") == open_id:
             return True
     return False
+
+
+def log_message_mentions(message: Dict[str, Any]) -> None:
+    mentions = message.get("mentions") or []
+    if not mentions:
+        print("feishu mentions: none")
+        return
+    masked = []
+    for mention in mentions:
+        mention_id = mention.get("id") or {}
+        masked.append({
+            "key": mention.get("key"),
+            "open_id": mention_id.get("open_id"),
+            "user_id": mask_id(mention_id.get("user_id")),
+        })
+    print(f"feishu mentions: {json.dumps(masked, ensure_ascii=False)}")
+
+
+def message_has_leading_mention(message: Dict[str, Any], text: str) -> bool:
+    key = leading_mention_key(text)
+    if not key:
+        return False
+    mentions = message.get("mentions") or []
+    if not mentions:
+        return True
+    return any(mention.get("key") == key for mention in mentions)
 
 
 def handle_feishu_event(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -219,6 +273,7 @@ def handle_feishu_event(payload: Dict[str, Any]) -> Dict[str, Any]:
         return {"ok": False, "error": "暂未启用飞书加密事件解析，请关闭 Encrypt Key 或补充解密逻辑"}
 
     config = load_config()
+    log_config_once(config)
     verify_token(payload, config)
 
     header = payload.get("header", {})
@@ -240,14 +295,13 @@ def handle_feishu_event(payload: Dict[str, Any]) -> Dict[str, Any]:
         return {"ok": True, "ignored": "non-text message"}
     if not has_bot_mention(text):
         return {"ok": True, "ignored": "not mentioned"}
+    log_message_mentions(message)
     if config.bot_open_id and not message_mentions_open_id(message, config.bot_open_id):
+        return {"ok": True, "ignored": "not mentioned"}
+    if not config.bot_open_id and not message_has_leading_mention(message, text):
         return {"ok": True, "ignored": "not mentioned"}
 
     token = get_tenant_access_token(config)
-    if not config.bot_open_id and message.get("mentions"):
-        bot_open_id = get_bot_open_id(token)
-        if not message_mentions_open_id(message, bot_open_id):
-            return {"ok": True, "ignored": "not mentioned"}
     try:
         meme = generate_from_text(text)
         filename = f"{meme.command}.{meme.extension}"

@@ -94,6 +94,37 @@ class FeishuMentionTests(unittest.TestCase):
         generate_from_text.assert_called_once_with("@_user_1 狂爱粉 测试一下")
         send_image.assert_called_once()
 
+    @patch("feishu_bot.send_image")
+    @patch("feishu_bot.upload_image")
+    @patch("feishu_bot.generate_from_text")
+    @patch("feishu_bot.get_tenant_access_token")
+    @patch("feishu_bot.load_config")
+    def test_message_with_leading_feishu_mention_generates_without_bot_open_id(
+        self,
+        load_config,
+        get_token,
+        generate_from_text,
+        upload_image,
+        send_image,
+    ):
+        load_config.return_value = feishu_bot.FeishuConfig("app", "secret")
+        get_token.return_value = "tenant-token"
+        generate_from_text.return_value.command = "狂爱粉"
+        generate_from_text.return_value.extension = "jpg"
+        generate_from_text.return_value.buffer.getvalue.return_value = b"image"
+        upload_image.return_value = "img_key"
+
+        result = feishu_bot.handle_feishu_event(
+            text_event(
+                "@_user_1 狂爱粉 测试一下",
+                mentions=[{"key": "@_user_1", "id": {"open_id": "ou_any"}}],
+            )
+        )
+
+        self.assertEqual(result, {"ok": True})
+        generate_from_text.assert_called_once_with("@_user_1 狂爱粉 测试一下")
+        send_image.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()
