@@ -238,22 +238,6 @@ def message_mentions_open_id(message: Dict[str, Any], open_id: str) -> bool:
     return False
 
 
-def log_message_mentions(message: Dict[str, Any]) -> None:
-    mentions = message.get("mentions") or []
-    if not mentions:
-        print("feishu mentions: none")
-        return
-    masked = []
-    for mention in mentions:
-        mention_id = mention.get("id") or {}
-        masked.append({
-            "key": mention.get("key"),
-            "open_id": mention_id.get("open_id"),
-            "user_id": mask_id(mention_id.get("user_id")),
-        })
-    print(f"feishu mentions: {json.dumps(masked, ensure_ascii=False)}")
-
-
 def message_has_leading_mention(message: Dict[str, Any], text: str) -> bool:
     key = leading_mention_key(text)
     if not key:
@@ -300,7 +284,6 @@ def handle_feishu_event(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not is_private_chat(message):
         if not has_bot_mention(text):
             return {"ok": True, "ignored": "not mentioned"}
-        log_message_mentions(message)
         if config.bot_open_id and not message_mentions_open_id(message, config.bot_open_id):
             return {"ok": True, "ignored": "not mentioned"}
         if not config.bot_open_id and not message_has_leading_mention(message, text):
