@@ -12,8 +12,8 @@
 
 | 指令 | 参数数量 | 输出 | 示例 | 效果图 | 对应函数 |
 | --- | ---: | --- | --- | --- | --- |
-| `psyduck` / `可达鸭` / `可达鸭举牌` | 2 | GIF | `可达鸭 青\|青` | ![可达鸭效果图](docs/images/memes/psyduck.gif) | `psyduck([left, right])` |
-| `fanatic` / `狂爱粉` | 1 | JPG | `狂爱粉 施青青` | ![狂爱粉效果图](docs/images/memes/fanatic.jpg) | `fanatic(text)` |
+| `psyduck` / `可达鸭` / `可达鸭举牌` | 2 | GIF | `可达鸭 左边\|右边` | ![可达鸭效果图](docs/images/memes/psyduck.gif) | `psyduck([left, right])` |
+| `fanatic` / `狂爱粉` | 1 | JPG | `狂爱粉 测试一下` | ![狂爱粉效果图](docs/images/memes/fanatic.jpg) | `fanatic(text)` |
 | `luxunsay` / `鲁迅说` | 1 | PNG | `鲁迅说 找CC去` | ![鲁迅说效果图](docs/images/memes/luxunsay.png) | `luxunsay(text)` |
 | `ascension` / `升天` | 1 | JPG | `升天 做了好事` | ![升天效果图](docs/images/memes/ascension.jpg) | `ascension(text)` |
 | `badnews` / `悲报` | 1 | PNG | `悲报 一个悲伤的故事` | ![悲报效果图](docs/images/memes/badnews.png) | `badnews(text)` |
